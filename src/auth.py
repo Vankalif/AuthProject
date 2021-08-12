@@ -2,7 +2,11 @@ import jwt
 from fastapi import HTTPException
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
+
+from tortoise.exceptions import DoesNotExist, OperationalError
+
 from settings import JWT_CONFIG
+from .models import Token, RefreshToken, Token_Pydantic, RefreshToken_Pydantic
 
 
 class Auth:
@@ -65,3 +69,25 @@ class Auth:
             raise HTTPException(status_code=401, detail='Refresh token expired')
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail='Invalid refresh token')
+
+    async def remove_access_token(self, user):
+        try:
+            access_token_obj = await Token.get(user=user)
+            await access_token_obj.delete()
+            return True
+        except DoesNotExist:
+            raise HTTPException(status_code=500, detail='User was found, but token is not')
+        except OperationalError:
+            raise HTTPException(status_code=500, detail='User was found, token was found, but can\'t delete it.')
+
+
+    async def remove_refresh_token(self, user):
+        try:
+            refresh_token_obj = await RefreshToken.get(user=user)
+            await refresh_token_obj.delete()
+            return True
+        except DoesNotExist:
+            raise HTTPException(status_code=500, detail='User was found, but refresh token is not')
+        except OperationalError:
+            raise HTTPException(status_code=500,
+                                detail='User was found, resfresh token was found, but can\'t delete it.')

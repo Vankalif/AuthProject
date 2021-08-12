@@ -1,5 +1,3 @@
-
-
 from passlib.hash import bcrypt
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -14,39 +12,39 @@ from src.auth import Auth
 
 auth_handler = Auth()
 app = FastAPI()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='login')
 
 
 async def authenticate_user(username: str, password: str):
     user = await User.get(username=username)
     if not user:
         return False
-    if not user.verify_password(password):
+    if not auth_handler.verify_password(password, user.password):
         return False
     return user
 
 
-@app.post("/token")
-async def generate_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await authenticate_user(form_data.username, form_data.password)
-    if not user:
+@app.post("/login", response_model=User_Pydantic_Response_Model)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user_obj = await authenticate_user(form_data.username, form_data.password)
+    if not user_obj:
         raise HTTPException(
             status_code=401,
             detail='Invalid username or password'
         )
-    user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user)
+    await auth_handler.remove_access_token(user_obj)
+    await auth_handler.remove_refresh_token(user_obj)
+    user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
+
     jwt_token = auth_handler.encode_token(**user_pydantic_model.dict())
-    token_model = await Token.create(hash_string=jwt_token, user=user)
+    jwt_refresh_token = auth_handler.encode_refresh_token(**user_pydantic_model.dict())
 
+    await Token.create(hash_string=jwt_token, user=user_obj, expire_at=JWT_CONFIG['token_expire'])
+    await RefreshToken.create(hash_string=jwt_refresh_token,
+                              user=user_obj,
+                              expire_at=JWT_CONFIG['refresh_token_expire'])
 
-@app.post("/refresh")
-async def refresh_token():
-    ...
-
-
-@app.post("/login")
-async def login():
-    ...
+    return await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
 
 
 @app.post("/signup", response_model=User_Pydantic_Response_Model)
