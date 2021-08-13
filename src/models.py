@@ -33,6 +33,6 @@ User_Pydantic = pydantic_model_creator(User, name="User", exclude_readonly=True)
 User_Pydantic_Response_Model = pydantic_model_creator(User,
                                                       name='UserResponse',
                                                       exclude=('password',))
-Token_Pydantic = pydantic_model_creator(Token, name="Token")
+Token_Pydantic = pydantic_model_creator(Token, name="Token", exclude=("user",))
 RefreshToken_Pydantic = pydantic_model_creator(RefreshToken, name="RefreshToken")
 
