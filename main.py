@@ -27,25 +27,30 @@ async def authenticate_user(username: str, password: str):
 
 @app.post("/login", response_model=User_Pydantic_Response_Model)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user_obj = await authenticate_user(form_data.username, form_data.password)
-    if not user_obj:
-        raise HTTPException(
-            status_code=401,
-            detail='Invalid username or password'
-        )
-    await auth_handler.del_access_token(user_obj)
-    await auth_handler.del_refresh_token(user_obj)
-    user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
+    # Identification
+    user = await auth_handler.usr_ident_by_creds(form_data)
 
+    # Authentication
+    auth_handler.verify_password(form_data.password, user.password)
+
+    # Remove tokens from user in database
+    await auth_handler.del_access_token(user)
+    await auth_handler.del_refresh_token(user)
+
+    # Get Pydantic model for encode in tokens
+    user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user)
+
+    # Encoding
     jwt_token = auth_handler.encode_token(**user_pydantic_model.dict())
     jwt_refresh_token = auth_handler.encode_refresh_token(**user_pydantic_model.dict())
 
-    await Token.create(hash_string=jwt_token, user=user_obj, expire_at=JWT_CONFIG['token_expire'])
+    # Write tokens in database
+    await Token.create(hash_string=jwt_token, user=user, expire_at=JWT_CONFIG['token_expire'])
     await RefreshToken.create(hash_string=jwt_refresh_token,
-                              user=user_obj,
+                              user=user,
                               expire_at=JWT_CONFIG['refresh_token_expire'])
 
-    return await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
+    return await User_Pydantic_Response_Model.from_tortoise_orm(user)
 
 
 @app.post("/refresh", response_model=Token_Pydantic)
@@ -103,7 +108,7 @@ async def create_user(user: User_Pydantic):
 
 
 @app.get("/secret")
-async def secret(token: str = Depends(oauth2_scheme)):
+async def secret(credentials: HTTPAuthorizationCredentials = Security(security)):
     return True
 
 

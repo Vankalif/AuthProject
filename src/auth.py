@@ -1,12 +1,13 @@
 import jwt
 from fastapi import HTTPException
+from fastapi.security import OAuth2PasswordRequestForm, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 
 from tortoise.exceptions import DoesNotExist, OperationalError
 
 from settings import JWT_CONFIG
-from .models import Token, RefreshToken
+from .models import Token, RefreshToken, User
 
 
 class Auth:
@@ -70,7 +71,51 @@ class Auth:
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail='Invalid refresh token')
 
-    async def del_access_token(self, user):
+    @staticmethod
+    async def usr_ident_by_creds(creds: OAuth2PasswordRequestForm) -> User:
+        """
+            User identification function. Idents user by login.
+            :param creds: an instance of OAuth2PasswordRequestForm
+            :return list: Return a User tortoise.models.Model instance
+            :raises HTTPException, TypeError
+        """
+        try:
+            if not isinstance(creds, OAuth2PasswordRequestForm):
+                raise TypeError
+
+            form_data = creds
+            user = await User.get(username=form_data.username)
+            return user
+
+        except DoesNotExist:
+            raise HTTPException(status_code=401, detail="user or password are invalid")
+
+    async def usr_ident_by_token(self, creds: HTTPAuthorizationCredentials):
+        """
+            User identification function. Idents user by refresh token.
+            :param creds: an instance of HTTPAuthorizationCredentials
+            :return list: Return a list of User data - [User, refresh_token, access_token]
+            :raises HTTPException, TypeError
+        """
+        try:
+            if not isinstance(creds, HTTPAuthorizationCredentials):
+                raise TypeError
+
+            refresh_token = creds.credentials
+            token_sub = self.decode_token(refresh_token)
+            user = await User.get(username=token_sub)
+        except DoesNotExist:
+            raise HTTPException(status_code=401, detail="user or password are invalid")
+
+        try:
+            access_token = await Token.get(user=user)
+        except DoesNotExist:
+            raise HTTPException(status_code=500, detail="User was found, but tokens are not")
+
+        return [user, refresh_token, access_token]
+
+    @staticmethod
+    async def del_access_token(user):
         try:
             access_token_obj = await Token.get(user=user)
             await access_token_obj.delete()
@@ -80,7 +125,8 @@ class Auth:
         except OperationalError:
             raise HTTPException(status_code=500, detail='User was found, token was found, but can\'t delete it.')
 
-    async def del_refresh_token(self, user):
+    @staticmethod
+    async def del_refresh_token(user):
         try:
             refresh_token_obj = await RefreshToken.get(user=user)
             await refresh_token_obj.delete()
