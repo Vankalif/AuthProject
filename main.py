@@ -12,7 +12,6 @@ from src.models import *
 auth_handler = Auth()
 security = HTTPBearer()
 app = FastAPI()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='login')
 
 
 async def authenticate_user(username: str, password: str):
@@ -105,7 +104,9 @@ async def create_user(user: User_Pydantic):
 
 @app.get("/secret")
 async def secret(credentials: HTTPAuthorizationCredentials = Security(security)):
-    return True
+    token = credentials.credentials
+    if auth_handler.decode_token(token):
+        return "Secret data"
 
 
 @app.get("/notsecret")
