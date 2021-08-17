@@ -55,21 +55,22 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/refresh", response_model=Token_Pydantic)
 async def new_token(credentials: HTTPAuthorizationCredentials = Security(security)):
-
-    refresh_token = credentials.credentials
-
     # Identification
-    token_sub = auth_handler.decode_token(refresh_token)
-    user = await User.get(username=token_sub)
+    user, refresh_token, access_token = await auth_handler.usr_ident_by_token(credentials)
+
+    # Convert tortoise model into Pydantic model
     user_pydantic = await User_Pydantic.from_tortoise_orm(user)
-    token_obj = await RefreshToken.get(user=user)
-    token = await RefreshToken_Pydantic.from_tortoise_orm(token_obj)
 
     # Authentication
-    if token.hash_string == refresh_token:
-        await auth_handler.del_access_token(user)
+    if refresh_token.hash_string == credentials.credentials:
+        # Encode Pydantic model into access token
         jwt_token = auth_handler.encode_token(**user_pydantic.dict())
-        access_token = await Token.create(hash_string=jwt_token, user=user, expire_at=JWT_CONFIG['token_expire'])
+
+        # Update the token for the user
+        await Token.filter(id=user.id).update(hash_string=jwt_token, expire_at=JWT_CONFIG['token_expire'])
+
+        # get updated data
+        access_token = await Token.get(user=user)
         access_token_in = Token_Pydantic.from_orm(access_token)
         return access_token_in
     raise HTTPException(status_code=401)

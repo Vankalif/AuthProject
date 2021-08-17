@@ -93,7 +93,7 @@ class Auth:
     async def usr_ident_by_token(self, creds: HTTPAuthorizationCredentials):
         """
             User identification function. Idents user by refresh token.
-            :param creds: an instance of HTTPAuthorizationCredentials
+            :param creds: an instance of HTTPAuthorizationCredentials model
             :return list: Return a list of User data - [User, refresh_token, access_token]
             :raises HTTPException, TypeError
         """
@@ -108,6 +108,7 @@ class Auth:
             raise HTTPException(status_code=401, detail="user or password are invalid")
 
         try:
+            refresh_token = await RefreshToken.get(user=user)
             access_token = await Token.get(user=user)
         except DoesNotExist:
             raise HTTPException(status_code=500, detail="User was found, but tokens are not")
