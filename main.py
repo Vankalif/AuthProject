@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Depends, HTTPException, Security
-from fastapi.exceptions import ValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from passlib.hash import bcrypt
@@ -72,8 +71,8 @@ async def new_token(credentials: HTTPAuthorizationCredentials = Security(securit
         # get updated data
         access_token = await Token.get(user=user)
         access_token_in = Token_Pydantic.from_orm(access_token)
+
         return access_token_in
-    raise HTTPException(status_code=401)
 
 
 @app.post("/signup", response_model=User_Pydantic_Response_Model)
@@ -85,27 +84,23 @@ async def create_user(user: User_Pydantic):
                 detail="Username already exist"
             )
     except DoesNotExist:
-        try:
-            user_obj = await User.create(username=user.username,
-                                         password=bcrypt.hash(user.password),
-                                         email=user.email)
+        # Create a user
+        user_obj = await User.create(username=user.username,
+                                     password=bcrypt.hash(user.password),
+                                     email=user.email)
 
-            user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
+        # Encoder user data in JWT-tokens
+        user_pydantic_model = await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
+        access_token = auth_handler.encode_token(**user_pydantic_model.dict())
+        refresh_token = auth_handler.encode_refresh_token(**user_pydantic_model.dict())
 
-            jwt_token = auth_handler.encode_token(**user_pydantic_model.dict())
-            jwt_refresh_token = auth_handler.encode_refresh_token(**user_pydantic_model.dict())
-            await Token.create(hash_string=jwt_token, user=user_obj, expire_at=JWT_CONFIG['token_expire'])
-            await RefreshToken.create(hash_string=jwt_refresh_token,
-                                      user=user_obj,
-                                      expire_at=JWT_CONFIG['refresh_token_expire'])
+        # Write tokens into database
+        await Token.create(hash_string=access_token, user=user_obj, expire_at=JWT_CONFIG['token_expire'])
+        await RefreshToken.create(hash_string=refresh_token,
+                                  user=user_obj,
+                                  expire_at=JWT_CONFIG['refresh_token_expire'])
 
-            return await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
-
-        except ValidationError:
-            raise HTTPException(
-                status_code=422,
-                detail="Validation Error"
-            )
+        return await User_Pydantic_Response_Model.from_tortoise_orm(user_obj)
 
 
 @app.get("/secret")
